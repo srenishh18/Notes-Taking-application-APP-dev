@@ -22,6 +22,48 @@ const colors = [
   { id: 'paper', label: 'Paper', hex: '#eeece5' },
 ];
 
+const sampleNotes = [
+  {
+    _id: 'sample-welcome',
+    title: 'Welcome to Little Notes',
+    content: 'A quiet place to gather ideas, reminders, and all the little things worth remembering.',
+    color: 'butter',
+    pinned: true,
+  },
+  {
+    _id: 'sample-weekend',
+    title: 'Weekend plans',
+    content: 'Visit the farmers market\nTake a long walk\nTry that new coffee place',
+    color: 'mint',
+    pinned: false,
+  },
+  {
+    _id: 'sample-reading',
+    title: 'Books to read',
+    content: 'The Creative Act\nFour Thousand Weeks\nA Psalm for the Wild-Built',
+    color: 'lilac',
+    pinned: false,
+  },
+  {
+    _id: 'sample-reminder',
+    title: 'A small reminder',
+    content: 'Make time for a proper lunch away from the screen.',
+    color: 'rose',
+    pinned: false,
+  },
+  {
+    _id: 'sample-idea',
+    title: 'Project thought',
+    content: 'Keep the first version simple: capture notes quickly, then make them easy to find.',
+    color: 'sky',
+    pinned: true,
+  },
+].map((note, index) => ({
+  ...note,
+  createdAt: new Date(Date.now() - index * 86400000).toISOString(),
+  updatedAt: new Date(Date.now() - index * 86400000).toISOString(),
+}));
+
 async function request(url, options) {
   const response = await fetch(url, {
     ...options,
@@ -49,11 +91,16 @@ function App() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
+  const [isDemoMode, setIsDemoMode] = useState(false);
 
   useEffect(() => {
     request('/api/notes')
       .then(setNotes)
-      .catch((loadError) => setError(loadError.message))
+      .catch(() => {
+        setIsDemoMode(true);
+        setNotes(sampleNotes);
+        setError('MongoDB is unavailable. Showing sample notes; demo changes will not be saved after refresh.');
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -88,6 +135,17 @@ function App() {
   }
 
   async function saveNote(draft) {
+    if (isDemoMode) {
+      const now = new Date().toISOString();
+      const savedNote = { ...draft, _id: draft._id || `demo-${Date.now()}`, updatedAt: now };
+      setNotes((current) => draft._id
+        ? current.map((note) => (note._id === savedNote._id ? savedNote : note))
+        : [savedNote, ...current]);
+      setActiveNote(null);
+      setToast(draft._id ? 'Demo note saved' : 'Demo note created');
+      return;
+    }
+
     setSaving(true);
     try {
       const savedNote = await request(draft._id ? `/api/notes/${draft._id}` : '/api/notes', {
@@ -107,6 +165,13 @@ function App() {
   }
 
   async function togglePinned(note) {
+    if (isDemoMode) {
+      setNotes((current) => current.map((item) => (
+        item._id === note._id ? { ...item, pinned: !item.pinned, updatedAt: new Date().toISOString() } : item
+      )));
+      return;
+    }
+
     try {
       const updatedNote = await request(`/api/notes/${note._id}`, {
         method: 'PUT',
@@ -124,6 +189,13 @@ function App() {
       return;
     }
     if (!window.confirm(`Delete “${note.title}”? This cannot be undone.`)) return;
+    if (isDemoMode) {
+      setNotes((current) => current.filter((item) => item._id !== note._id));
+      setActiveNote(null);
+      setToast('Demo note deleted');
+      return;
+    }
+
     try {
       await request(`/api/notes/${note._id}`, { method: 'DELETE' });
       setNotes((current) => current.filter((item) => item._id !== note._id));
@@ -161,7 +233,7 @@ function App() {
         <div className="sidebar-bottom">
           <div className="sidebar-note-icon"><Sparkles size={16} /></div>
           <p>Your ideas, gathered in one quiet place.</p>
-          <span>SYNCED WITH ATLAS</span>
+          <span>{isDemoMode ? 'SAMPLE NOTES · DEMO MODE' : 'SYNCED WITH MONGODB'}</span>
         </div>
       </aside>
 
@@ -219,7 +291,7 @@ function App() {
             </section>
           )}
 
-          <footer className="page-footer"><span>Thoughts are better when they have somewhere to land.</span><span><span className="footer-status" /> {notes.length} {notes.length === 1 ? 'note' : 'notes'} saved</span></footer>
+          <footer className="page-footer"><span>Thoughts are better when they have somewhere to land.</span><span><span className="footer-status" /> {isDemoMode ? 'DEMO · NOT SAVED' : `${notes.length} ${notes.length === 1 ? 'note' : 'notes'} saved`}</span></footer>
         </div>
       </main>
 
